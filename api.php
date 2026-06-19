@@ -13,8 +13,6 @@ function apiHandler($path) {
         }
     }
 
-    $inputs = apiParseInput();
-
     if ($route === '' || $route === '/' || $route === 'info') {
         return apiInfo();
     }
@@ -24,29 +22,40 @@ function apiHandler($path) {
         return apiResponse(404, null, 'Unknown endpoint');
     }
 
-    $disktag = apiResolveDisktag($inputs);
+    $disktag = apiResolveDisktag();
     if (!$disktag) {
         return apiResponse(400, null, 'No disk configured, add a disk in admin panel first');
     }
     $_SERVER['disktag'] = $disktag;
+    $_SERVER['list_path'] = getListpath($_SERVER['HTTP_HOST']);
 
     // Authorize write operations
     $writeOps = ['upload', 'upload-session', 'delete', 'mkdir', 'rename', 'move', 'copy'];
-    if (in_array($action, $writeOps) && !$_SERVER['admin']) {
+    if (in_array($action, $writeOps)) {
         $_SERVER['admin'] = 1;
     }
 
+    // Parse JSON body for POST requests
+    $body = null;
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' || $_SERVER['REQUEST_METHOD'] === 'PUT') {
+        $raw = file_get_contents('php://input');
+        if ($raw) {
+            $body = json_decode($raw, true);
+            if (!$body) parse_str($raw, $body);
+        }
+    }
+
     switch ($action) {
-        case 'list': return apiList($disktag, $inputs);
-        case 'file': return apiFile($disktag, $inputs);
-        case 'download': return apiDownload($disktag, $inputs);
-        case 'upload': return apiUpload($disktag, $inputs);
-        case 'upload-session': return apiUploadSession($disktag, $inputs);
-        case 'delete': return apiDelete($disktag, $inputs);
-        case 'mkdir': return apiMkdir($disktag, $inputs);
-        case 'rename': return apiRename($disktag, $inputs);
-        case 'move': return apiMove($disktag, $inputs);
-        case 'copy': return apiCopy($disktag, $inputs);
+        case 'list': return apiList($disktag);
+        case 'file': return apiFile($disktag);
+        case 'download': return apiDownload($disktag);
+        case 'upload': return apiUpload($disktag);
+        case 'upload-session': return apiUploadSession($disktag, $body);
+        case 'delete': return apiDelete($disktag, $body);
+        case 'mkdir': return apiMkdir($disktag, $body);
+        case 'rename': return apiRename($disktag, $body);
+        case 'move': return apiMove($disktag, $body);
+        case 'copy': return apiCopy($disktag, $body);
         default: return apiResponse(404, null, 'Unknown endpoint: ' . $action);
     }
 }
@@ -70,17 +79,6 @@ function apiAuth() {
     return false;
 }
 
-function apiParseInput() {
-    $inputs = $_GET;
-    if (count($_POST) > 0) $inputs = array_merge($inputs, $_POST);
-    $rawBody = file_get_contents('php://input');
-    if ($rawBody && isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) {
-        $json = json_decode($rawBody, true);
-        if ($json) $inputs = array_merge($inputs, $json);
-    }
-    return $inputs;
-}
-
 function apiGetAction($route) {
     $parts = explode('/', $route);
     $base = $parts[0];
@@ -88,11 +86,15 @@ function apiGetAction($route) {
     return $base === '' ? null : $base;
 }
 
-function apiResolveDisktag($inputs) {
-    if (isset($inputs['disktag']) && $inputs['disktag'] !== '') return $inputs['disktag'];
+function apiResolveDisktag() {
+    if (!empty($_GET['disktag'])) return $_GET['disktag'];
     $disktags = explode('|', getConfig('disktag'));
     if (count($disktags) > 0 && $disktags[0] !== '') return $disktags[0];
     return null;
+}
+
+function apiGet($key, $default = null) {
+    return isset($_GET[$key]) ? $_GET[$key] : $default;
 }
 
 function apiResponse($code, $data = null, $message = '') {
@@ -146,12 +148,11 @@ function apiInfo() {
     ]);
 }
 
-function apiList($disktag, $inputs) {
+function apiList($disktag) {
     global $drive;
     if (!apiDriveOk($disktag)) return apiError(503, 'Drive not available: ' . ($drive ? $drive->error['body'] : ''));
-    $path = isset($inputs['path']) ? $inputs['path'] : '/';
-    $listPath = getListpath($_SERVER['HTTP_HOST']);
-    $fullPath = path_format($listPath . path_format($path));
+    $path = apiGet('path', '/');
+    $fullPath = path_format($_SERVER['list_path'] . path_format($path));
     $files = $drive->list_files($fullPath);
     if (isset($files['error'])) return apiError(500, json_encode($files['error']));
 
@@ -159,8 +160,8 @@ function apiList($disktag, $inputs) {
         $result = [
             'type' => 'folder',
             'path' => $path,
-            'name' => $files['name'] ?? '',
-            'childcount' => $files['childcount'] ?? 0,
+            'name' => isset($files['name']) ? $files['name'] : '',
+            'childcount' => isset($files['childcount']) ? $files['childcount'] : 0,
             'items' => [],
         ];
         if (isset($files['list'])) {
@@ -169,9 +170,9 @@ function apiList($disktag, $inputs) {
                 $result['items'][] = [
                     'name' => $item['name'],
                     'type' => $item['type'],
-                    'size' => $item['size'] ?? 0,
+                    'size' => isset($item['size']) ? $item['size'] : 0,
                     'sizeFormatted' => isset($item['size']) ? size_format($item['size']) : '',
-                    'time' => $item['time'] ?? '',
+                    'time' => isset($item['time']) ? $item['time'] : '',
                 ];
             }
         }
@@ -181,45 +182,43 @@ function apiList($disktag, $inputs) {
     if ($files['type'] === 'file') {
         return apiResponse(200, [
             'type' => 'file',
-            'name' => $files['name'] ?? '',
-            'size' => $files['size'] ?? 0,
+            'name' => isset($files['name']) ? $files['name'] : '',
+            'size' => isset($files['size']) ? $files['size'] : 0,
             'sizeFormatted' => isset($files['size']) ? size_format($files['size']) : '',
-            'time' => $files['time'] ?? '',
-            'mime' => $files['mime'] ?? '',
-            'downloadUrl' => $files['url'] ?? '',
+            'time' => isset($files['time']) ? $files['time'] : '',
+            'mime' => isset($files['mime']) ? $files['mime'] : '',
+            'downloadUrl' => isset($files['url']) ? $files['url'] : '',
         ]);
     }
 
     return apiError(500, 'Unknown response from drive');
 }
 
-function apiFile($disktag, $inputs) {
+function apiFile($disktag) {
     global $drive;
     if (!apiDriveOk($disktag)) return apiError(503, 'Drive not available');
-    $path = $inputs['path'] ?? '';
+    $path = apiGet('path', '');
     if ($path === '' || $path === '/') return apiError(400, 'path parameter is required');
-    $listPath = getListpath($_SERVER['HTTP_HOST']);
-    $fullPath = path_format($listPath . path_format($path));
+    $fullPath = path_format($_SERVER['list_path'] . path_format($path));
     $file = $drive->list_files($fullPath);
     if (isset($file['error'])) return apiError(404, 'File not found');
     if ($file['type'] !== 'file') return apiError(400, 'Path is a folder');
     return apiResponse(200, [
-        'name' => $file['name'] ?? '',
-        'size' => $file['size'] ?? 0,
+        'name' => isset($file['name']) ? $file['name'] : '',
+        'size' => isset($file['size']) ? $file['size'] : 0,
         'sizeFormatted' => isset($file['size']) ? size_format($file['size']) : '',
-        'time' => $file['time'] ?? '',
-        'mime' => $file['mime'] ?? '',
-        'downloadUrl' => $file['url'] ?? '',
+        'time' => isset($file['time']) ? $file['time'] : '',
+        'mime' => isset($file['mime']) ? $file['mime'] : '',
+        'downloadUrl' => isset($file['url']) ? $file['url'] : '',
     ]);
 }
 
-function apiDownload($disktag, $inputs) {
+function apiDownload($disktag) {
     global $drive;
     if (!apiDriveOk($disktag)) return apiError(503, 'Drive not available');
-    $path = $inputs['path'] ?? '';
+    $path = apiGet('path', '');
     if ($path === '' || $path === '/') return apiError(400, 'path is required');
-    $listPath = getListpath($_SERVER['HTTP_HOST']);
-    $fullPath = path_format($listPath . path_format($path));
+    $fullPath = path_format($_SERVER['list_path'] . path_format($path));
     $file = $drive->list_files($fullPath);
     if (isset($file['error']) || $file['type'] !== 'file' || empty($file['url'])) {
         return apiError(404, 'File not found or not downloadable');
@@ -230,49 +229,46 @@ function apiDownload($disktag, $inputs) {
     return output('', 302, ['Location' => $url]);
 }
 
-function apiUpload($disktag, $inputs) {
+function apiUpload($disktag) {
     global $drive;
     if (!apiDriveOk($disktag)) return apiError(503, 'Drive not available');
     if (empty($_FILES['file'])) return apiError(400, 'No file provided (use multipart field name "file")');
-    $path = $inputs['path'] ?? '/';
+    $path = apiGet('path', '/');
     if ($_FILES['file']['error'] !== UPLOAD_ERR_OK) {
         return apiError(400, 'Upload error: ' . $_FILES['file']['error']);
     }
     if ($_FILES['file']['size'] > 4 * 1024 * 1024) {
         return apiError(413, 'File too large (>4MB), use /api/upload-session for large files');
     }
-    $listPath = getListpath($_SERVER['HTTP_HOST']);
-    $fullPath = path_format($listPath . path_format($path));
+    $fullPath = path_format($_SERVER['list_path'] . path_format($path));
     return $drive->smallfileupload($fullPath, $_FILES['file']);
 }
 
-function apiUploadSession($disktag, $inputs) {
+function apiUploadSession($disktag, $body) {
     global $drive;
     if (!apiDriveOk($disktag)) return apiError(503, 'Drive not available');
-    if (empty($inputs['name'])) return apiError(400, '"name" is required');
-    if (empty($inputs['size'])) return apiError(400, '"size" is required (bytes)');
-    $path = $inputs['path'] ?? '/';
-    $_POST['upbigfilename'] = $inputs['name'];
-    $_POST['filesize'] = $inputs['size'];
-    $_POST['filelastModified'] = $inputs['filelastModified'] ?? (time() . '000');
-    if (isset($inputs['md5'])) $_POST['filemd5'] = $inputs['md5'];
-    $listPath = getListpath($_SERVER['HTTP_HOST']);
-    $fullPath = path_format($listPath . path_format($path));
+    if (empty($body['name'])) return apiError(400, '"name" is required');
+    if (empty($body['size'])) return apiError(400, '"size" is required (bytes)');
+    $path = isset($body['path']) ? $body['path'] : '/';
+    $_POST['upbigfilename'] = $body['name'];
+    $_POST['filesize'] = $body['size'];
+    $_POST['filelastModified'] = isset($body['filelastModified']) ? $body['filelastModified'] : (time() . '000');
+    if (isset($body['md5'])) $_POST['filemd5'] = $body['md5'];
+    $fullPath = path_format($_SERVER['list_path'] . path_format($path));
     return $drive->bigfileupload($fullPath);
 }
 
-function apiDelete($disktag, $inputs) {
+function apiDelete($disktag, $body) {
     global $drive;
     if (!apiDriveOk($disktag)) return apiError(503, 'Drive not available');
-    $path = $inputs['path'] ?? '';
+    $path = $body ? (isset($body['path']) ? $body['path'] : '') : apiGet('path', '');
     if ($path === '' || $path === '/') return apiError(400, 'path is required');
-    $listPath = getListpath($_SERVER['HTTP_HOST']);
-    $fullPath = path_format($listPath . path_format($path));
+    $fullPath = path_format($_SERVER['list_path'] . path_format($path));
     $decoded = urldecode($fullPath);
     $name = splitlast($decoded, '/')[1];
     $parentPath = splitlast($decoded, '/')[0];
     if ($parentPath === '') $parentPath = '/';
-    $file = ['path' => $parentPath, 'name' => $name, 'id' => $inputs['id'] ?? ''];
+    $file = ['path' => $parentPath, 'name' => $name, 'id' => isset($body['id']) ? $body['id'] : ''];
     $result = $drive->Delete($file);
     $parsed = json_decode($result['body'], true);
     if ($result['statusCode'] < 400 && (!$parsed || !isset($parsed['error']))) {
@@ -284,14 +280,13 @@ function apiDelete($disktag, $inputs) {
     return output($result['body'], $result['statusCode'], ['Content-Type' => 'application/json']);
 }
 
-function apiMkdir($disktag, $inputs) {
+function apiMkdir($disktag, $body) {
     global $drive;
     if (!apiDriveOk($disktag)) return apiError(503, 'Drive not available');
-    $path = $inputs['path'] ?? '/';
-    $name = $inputs['name'] ?? '';
+    $path = $body ? (isset($body['path']) ? $body['path'] : '/') : apiGet('path', '/');
+    $name = $body ? (isset($body['name']) ? $body['name'] : '') : apiGet('name', '');
     if ($name === '') return apiError(400, '"name" is required');
-    $listPath = getListpath($_SERVER['HTTP_HOST']);
-    $fullPath = path_format($listPath . path_format($path));
+    $fullPath = path_format($_SERVER['list_path'] . path_format($path));
     $parent = ['path' => $fullPath, 'name' => '', 'id' => ''];
     $result = $drive->Create($parent, 'folder', $name);
     $parsed = json_decode($result['body'], true);
@@ -302,20 +297,19 @@ function apiMkdir($disktag, $inputs) {
     return output($result['body'], $result['statusCode'], ['Content-Type' => 'application/json']);
 }
 
-function apiRename($disktag, $inputs) {
+function apiRename($disktag, $body) {
     global $drive;
     if (!apiDriveOk($disktag)) return apiError(503, 'Drive not available');
-    $path = $inputs['path'] ?? '';
-    $newName = $inputs['name'] ?? '';
+    $path = $body ? (isset($body['path']) ? $body['path'] : '') : apiGet('path', '');
+    $newName = $body ? (isset($body['name']) ? $body['name'] : '') : apiGet('name', '');
     if ($path === '' || $path === '/') return apiError(400, 'path is required');
     if ($newName === '') return apiError(400, '"name" (new name) is required');
-    $listPath = getListpath($_SERVER['HTTP_HOST']);
-    $fullPath = path_format($listPath . path_format($path));
+    $fullPath = path_format($_SERVER['list_path'] . path_format($path));
     $decoded = urldecode($fullPath);
     $oldName = splitlast($decoded, '/')[1];
     $parentPath = splitlast($decoded, '/')[0];
     if ($parentPath === '') $parentPath = '/';
-    $file = ['path' => $parentPath, 'name' => $oldName, 'id' => $inputs['id'] ?? ''];
+    $file = ['path' => $parentPath, 'name' => $oldName, 'id' => isset($body['id']) ? $body['id'] : ''];
     $result = $drive->Rename($file, $newName);
     $parsed = json_decode($result['body'], true);
     if ($result['statusCode'] < 400 && (!$parsed || !isset($parsed['error']))) {
@@ -326,21 +320,20 @@ function apiRename($disktag, $inputs) {
     return output($result['body'], $result['statusCode'], ['Content-Type' => 'application/json']);
 }
 
-function apiMove($disktag, $inputs) {
+function apiMove($disktag, $body) {
     global $drive;
     if (!apiDriveOk($disktag)) return apiError(503, 'Drive not available');
-    $path = $inputs['path'] ?? '';
-    $to = $inputs['to'] ?? '';
+    $path = $body ? (isset($body['path']) ? $body['path'] : '') : apiGet('path', '');
+    $to = $body ? (isset($body['to']) ? $body['to'] : '') : apiGet('to', '');
     if ($path === '' || $path === '/') return apiError(400, 'path is required');
     if ($to === '') return apiError(400, '"to" (destination path) is required');
-    $listPath = getListpath($_SERVER['HTTP_HOST']);
-    $fullPath = path_format($listPath . path_format($path));
-    $destPath = path_format($listPath . path_format($to));
+    $fullPath = path_format($_SERVER['list_path'] . path_format($path));
+    $destPath = path_format($_SERVER['list_path'] . path_format($to));
     $decoded = urldecode($fullPath);
     $name = splitlast($decoded, '/')[1];
     $parentPath = splitlast($decoded, '/')[0];
     if ($parentPath === '') $parentPath = '/';
-    $file = ['path' => $parentPath, 'name' => $name, 'id' => $inputs['id'] ?? ''];
+    $file = ['path' => $parentPath, 'name' => $name, 'id' => isset($body['id']) ? $body['id'] : ''];
     $folder = ['path' => $destPath, 'name' => '', 'id' => ''];
     $result = $drive->Move($file, $folder);
     $parsed = json_decode($result['body'], true);
@@ -352,18 +345,17 @@ function apiMove($disktag, $inputs) {
     return output($result['body'], $result['statusCode'], ['Content-Type' => 'application/json']);
 }
 
-function apiCopy($disktag, $inputs) {
+function apiCopy($disktag, $body) {
     global $drive;
     if (!apiDriveOk($disktag)) return apiError(503, 'Drive not available');
-    $path = $inputs['path'] ?? '';
+    $path = $body ? (isset($body['path']) ? $body['path'] : '') : apiGet('path', '');
     if ($path === '' || $path === '/') return apiError(400, 'path is required');
-    $listPath = getListpath($_SERVER['HTTP_HOST']);
-    $fullPath = path_format($listPath . path_format($path));
+    $fullPath = path_format($_SERVER['list_path'] . path_format($path));
     $decoded = urldecode($fullPath);
     $name = splitlast($decoded, '/')[1];
     $parentPath = splitlast($decoded, '/')[0];
     if ($parentPath === '') $parentPath = '/';
-    $file = ['path' => $parentPath, 'name' => $name, 'id' => $inputs['id'] ?? ''];
+    $file = ['path' => $parentPath, 'name' => $name, 'id' => isset($body['id']) ? $body['id'] : ''];
     $result = $drive->Copy($file);
     $parsed = json_decode($result['body'], true);
     if ($result['statusCode'] < 400 && (!$parsed || !isset($parsed['error']))) {
