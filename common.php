@@ -32,6 +32,7 @@ $EnvConfigs = [
     'hideFunctionalityFile' => 0b1010,
     'timezone'          => 0b0010,
     'passfile'          => 0b0011,
+    'api_key'           => 0b0011,
     'sitename'          => 0b0011,
     'customScript'      => 0b0011,
     'customCss'         => 0b0011,
@@ -142,6 +143,11 @@ function main($path) {
     global $drive;
 
     if (!function_exists('curl_init')) return output('<font color="red">Need curl</font>, please install php-curl.', 500);
+
+    if (strpos($path, '/api') === 0 && $path !== '/') {
+        include_once __DIR__ . $slash . 'api.php';
+        return apiHandler($path);
+    }
 
     $drive = null;
     $_SERVER['php_starttime'] = microtime(true);
