@@ -1053,6 +1053,11 @@ class Onedrive {
         return $diskSpace;
     }
 
+    public function createUploadSession($filepath) {
+        $response = $this->MSAPI('createUploadSession', $filepath, '{"item": { "@microsoft.graph.conflictBehavior": "rename" }}');
+        return json_decode($response['body'], true);
+    }
+
     protected function MSAPI($method, $path, $data = '', $headers = []) {
         $activeLimit = getConfig('activeLimit', $this->disktag);
         if ($activeLimit != '') {

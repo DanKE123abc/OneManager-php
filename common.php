@@ -22,6 +22,7 @@ $EnvConfigs = [
     'HerokuappId'       => 0b0000, // used in heroku.
 
     'admin'             => 0b0000,
+    'apitoken'          => 0b0000, // API bearer token, hidden from settings
     'adminloginpage'    => 0b0010,
     'autoJumpFirstDisk' => 0b1010,
     'background'        => 0b0011,
@@ -179,6 +180,11 @@ function main($path) {
     if ($_SERVER['timezone'] == '') $_SERVER['timezone'] = 0;
     $_SERVER['sitename'] = getConfig('sitename');
     if (empty($_SERVER['sitename'])) $_SERVER['sitename'] = getconstStr('defaultSitename');
+
+    if (strpos($path, 'api/') === 0) {
+        include __DIR__ . $slash . 'api.php';
+        return api_handle_request($path);
+    }
 
     if (isset($_GET['jsFile'])) {
         if (substr($_GET['jsFile'], -3) != '.js') return output('Only js files', 403);
@@ -2046,8 +2052,38 @@ output:
         <td></td><td><button name="changePass" value="changePass">' . getconstStr('ChangAdminPassword') . '</button></td>
     </tr>
     </form>
-</table><br>
-<table>
+</table><br>';
+
+    if (isset($_POST['generate_apitoken'])) {
+        if (compareadminmd5('admin', getConfig('admin'), $_COOKIE['admin'], $_POST['_admin'])) {
+            $newtoken = bin2hex(random_bytes(32));
+            setConfig(['apitoken' => $newtoken]);
+        }
+    }
+    if (isset($_POST['delete_apitoken'])) {
+        if (compareadminmd5('admin', getConfig('admin'), $_COOKIE['admin'], $_POST['_admin'])) {
+            setConfig(['apitoken' => '']);
+        }
+    }
+    $currenttoken = getConfig('apitoken');
+    $frame .= '<table>
+    <tr><td colspan="2"><b>API Token</b></td></tr>';
+    if ($currenttoken !== '') {
+        $frame .= '<tr><td>Token:</td><td><code id="apitoken_val">' . htmlspecialchars($currenttoken) . '</code>
+            <button onclick="var t=document.getElementById(\'apitoken_val\');navigator.clipboard.writeText(t.textContent);this.textContent=\'Copied!\'">Copy</button></td></tr>';
+        $frame .= '<tr><td>Example:</td><td><code>curl -H "Authorization: Bearer ' . htmlspecialchars($currenttoken) . '" /api/disktag/list?path=/</code></td></tr>';
+        $frame .= '<tr><td></td><td><form action="" method="post"><input name="_admin" type="hidden" value="">
+            <input type="hidden" name="delete_apitoken" value="1">
+            <input type="submit" value="Delete API Token" onclick="return confirm(\'Delete API token?\')"></form></td></tr>';
+    } else {
+        $frame .= '<tr><td colspan="2">No API token. Generate one to enable API access.</td></tr>';
+    }
+    $frame .= '<tr><td></td><td><form action="" method="post"><input name="_admin" type="hidden" value="">
+        <input type="hidden" name="generate_apitoken" value="1">
+        <input type="submit" value="' . ($currenttoken ? 'Regenerate' : 'Generate') . ' API Token"></form></td></tr>';
+    $frame .= '</table><br>';
+
+    $frame .= '<table>
     <form id="config_f" name="config" action="" method="POST" onsubmit="return false;">
     <tr>
         <td>' . getconstStr('AdminPassword') . ':<input type="password" name="pass">
