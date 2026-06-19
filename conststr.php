@@ -89,6 +89,7 @@ $constStr = [
         'en-us' => [
             'admin' => 'The admin password, Login button will not show when empty',
             'adminloginpage' => 'if set, the Login button will not display, and the login page no longer \'?login=admin\', it is \'?login={this value}\'.',
+            'api_key' => 'API authentication token. When set, write API calls (upload/delete/mkdir/etc) must pass this key via Authorization: Bearer <key> header or ?api_key=<key>.',
             'autoJumpFirstDisk' => 'a switch used in multy disks, if 1, auto jump to first disk',
             'customScript' => '<script> in all pages, e.g. http turn to https',
             'customCss' => '<style> in <head>',
@@ -123,6 +124,7 @@ $constStr = [
         'zh-cn' => [
             'admin' => '管理密码，不添加时不显示登录页面且无法登录。',
             'adminloginpage' => '如果设置，登录按钮及页面隐藏。管理登录的页面不再是\'?login=admin\'，而是\'?login=此设置的值\'。',
+            'api_key' => 'API鉴权密钥。设置后，写入类API调用（上传/删除/创建文件夹等）需要通过 Authorization: Bearer <key> 头或 ?api_key=<key> 参数传递此密钥。',
             'autoJumpFirstDisk' => '一个开关，用于多个磁盘，如果为1，则自动跳转到第一个磁盘',
             'customScript' => '<script>，在所有页都会存在,例如放一个http跳转https',
             'customCss' => '<style>，在<head>最后面',

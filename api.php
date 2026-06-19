@@ -5,11 +5,11 @@ function apiHandler($path) {
     $route = trim(substr($path, 4), '/');
 
     $apiKey = apiAuth();
-    if ($apiKey === false) {
+    if ($apiKey === false || $apiKey === null) {
         $publicEndpoints = ['list', 'file', 'download', 'info', ''];
         $base = apiGetAction($route);
         if (!in_array($base, $publicEndpoints)) {
-            return apiResponse(401, null, 'Unauthorized: invalid api_key');
+            return apiResponse(401, null, 'Unauthorized: api_key required');
         }
     }
 
