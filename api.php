@@ -4,60 +4,76 @@
 function apiHandler($path) {
     $route = trim(substr($path, 4), '/');
 
+    // CORS preflight
+    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+        return output('', 204, [
+            'Access-Control-Allow-Origin' => '*',
+            'Access-Control-Allow-Methods' => 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers' => 'Content-Type, Authorization, api_key',
+            'Access-Control-Max-Age' => '86400',
+        ]);
+    }
+
     $apiKey = apiAuth();
     if ($apiKey === false || $apiKey === null) {
         $publicEndpoints = ['list', 'file', 'download', 'info', ''];
         $base = apiGetAction($route);
         if (!in_array($base, $publicEndpoints)) {
-            return apiResponse(401, null, 'Unauthorized: api_key required');
+            $result = apiResponse(401, null, 'Unauthorized: api_key required');
+            $result['headers']['Access-Control-Allow-Origin'] = '*';
+            return $result;
         }
     }
 
     if ($route === '' || $route === '/' || $route === 'info') {
-        return apiInfo();
-    }
+        $result = apiInfo();
+    } else {
+        $action = apiGetAction($route);
+        if (!$action) {
+            $result = apiResponse(404, null, 'Unknown endpoint');
+        } else {
+            $disktag = apiResolveDisktag();
+            if (!$disktag) {
+                $result = apiResponse(400, null, 'No disk configured, add a disk in admin panel first');
+            } else {
+                $_SERVER['disktag'] = $disktag;
+                $_SERVER['list_path'] = getListpath($_SERVER['HTTP_HOST']);
 
-    $action = apiGetAction($route);
-    if (!$action) {
-        return apiResponse(404, null, 'Unknown endpoint');
-    }
+                $writeOps = ['upload', 'upload-session', 'delete', 'mkdir', 'rename', 'move', 'copy'];
+                if (in_array($action, $writeOps)) {
+                    $_SERVER['admin'] = 1;
+                }
 
-    $disktag = apiResolveDisktag();
-    if (!$disktag) {
-        return apiResponse(400, null, 'No disk configured, add a disk in admin panel first');
-    }
-    $_SERVER['disktag'] = $disktag;
-    $_SERVER['list_path'] = getListpath($_SERVER['HTTP_HOST']);
+                $body = null;
+                if ($_SERVER['REQUEST_METHOD'] === 'POST' || $_SERVER['REQUEST_METHOD'] === 'PUT') {
+                    $raw = file_get_contents('php://input');
+                    if ($raw) {
+                        $body = json_decode($raw, true);
+                        if (!$body) parse_str($raw, $body);
+                    }
+                }
 
-    // Authorize write operations
-    $writeOps = ['upload', 'upload-session', 'delete', 'mkdir', 'rename', 'move', 'copy'];
-    if (in_array($action, $writeOps)) {
-        $_SERVER['admin'] = 1;
-    }
-
-    // Parse JSON body for POST requests
-    $body = null;
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' || $_SERVER['REQUEST_METHOD'] === 'PUT') {
-        $raw = file_get_contents('php://input');
-        if ($raw) {
-            $body = json_decode($raw, true);
-            if (!$body) parse_str($raw, $body);
+                switch ($action) {
+                    case 'list': $result = apiList($disktag); break;
+                    case 'file': $result = apiFile($disktag); break;
+                    case 'download': $result = apiDownload($disktag); break;
+                    case 'upload': $result = apiUpload($disktag); break;
+                    case 'upload-session': $result = apiUploadSession($disktag, $body); break;
+                    case 'delete': $result = apiDelete($disktag, $body); break;
+                    case 'mkdir': $result = apiMkdir($disktag, $body); break;
+                    case 'rename': $result = apiRename($disktag, $body); break;
+                    case 'move': $result = apiMove($disktag, $body); break;
+                    case 'copy': $result = apiCopy($disktag, $body); break;
+                    default: $result = apiResponse(404, null, 'Unknown endpoint: ' . $action); break;
+                }
+            }
         }
     }
 
-    switch ($action) {
-        case 'list': return apiList($disktag);
-        case 'file': return apiFile($disktag);
-        case 'download': return apiDownload($disktag);
-        case 'upload': return apiUpload($disktag);
-        case 'upload-session': return apiUploadSession($disktag, $body);
-        case 'delete': return apiDelete($disktag, $body);
-        case 'mkdir': return apiMkdir($disktag, $body);
-        case 'rename': return apiRename($disktag, $body);
-        case 'move': return apiMove($disktag, $body);
-        case 'copy': return apiCopy($disktag, $body);
-        default: return apiResponse(404, null, 'Unknown endpoint: ' . $action);
-    }
+    $result['headers']['Access-Control-Allow-Origin'] = '*';
+    $result['headers']['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
+    $result['headers']['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, api_key';
+    return $result;
 }
 
 function apiAuth() {
@@ -226,6 +242,38 @@ function apiDownload($disktag) {
     $url = $file['url'];
     $domainforproxy = getConfig('domainforproxy', $disktag);
     if ($domainforproxy) $url = proxy_replace_domain($url, $domainforproxy);
+
+    // Proxy mode: fetch file server-side, return with CORS headers
+    if (apiGet('proxy')) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 0);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+        $body = curl_exec($ch);
+        $stat = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        curl_close($ch);
+
+        if ($stat >= 200 && $stat < 300) {
+            $fileName = isset($file['name']) ? $file['name'] : 'download';
+            $headers = [
+                'Access-Control-Allow-Origin' => '*',
+                'Access-Control-Allow-Methods' => 'GET, POST, OPTIONS',
+                'Access-Control-Allow-Headers' => '*',
+                'Content-Type' => $contentType ?: ($file['mime'] ?: 'application/octet-stream'),
+                'Content-Length' => strlen($body),
+                'Content-Disposition' => 'attachment; filename="' . str_replace('"', '\\"', $fileName) . '"',
+                'Cache-Control' => 'no-store',
+            ];
+            return output($body, 200, $headers);
+        }
+        return apiError(502, 'Upstream returned ' . $stat);
+    }
+
     return output('', 302, ['Location' => $url]);
 }
 
