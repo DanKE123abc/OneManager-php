@@ -70,6 +70,7 @@ $EnvConfigs = [
     'public_path'       => 0b0111,
     'fileConduitSize'   => 0b0110,
     'fileConduitCacheTime'   => 0b0110,
+    'sitePassword'      => 0b0011,
 ];
 
 $timezones = array(
@@ -237,6 +238,18 @@ function main($path) {
         $_SERVER['needUpdate'] = needUpdate();
     } else {
         $_SERVER['admin'] = 0;
+    }
+    // Site-wide visitor password check
+    $sitePassword = getConfig('sitePassword');
+    if ($sitePassword != '' && !$_SERVER['admin']) {
+        if (isset($_POST['visitorPass']) && $_POST['visitorPass'] === $sitePassword) {
+            $token = sha1('site_pass:' . $sitePassword);
+            setcookie('site_pass', $token, time() + 86400 * 7, $_SERVER['base_path']);
+            $_COOKIE['site_pass'] = $token;
+        }
+        if (!isset($_COOKIE['site_pass']) || $_COOKIE['site_pass'] !== sha1('site_pass:' . $sitePassword)) {
+            return sitePasswordForm();
+        }
     }
     if (isset($_GET['setup']))
         if ($_SERVER['admin']) {
@@ -1147,6 +1160,26 @@ function time_format($ISO) {
     return date('Y-m-d H:i:s', strtotime($ISO . " UTC"));
 }
 
+function sitePasswordForm() {
+    return output('
+<html>
+<head>
+    <meta charset=utf-8>
+    <meta name=viewport content="width=device-width,initial-scale=1">
+    <title>' . getconstStr('SitePassword') . '</title>
+</head>
+<body>
+    <div style="display:flex;height:100vh;align-items:center;justify-content:center;flex-direction:column;font-family:sans-serif">
+        <h3>' . getconstStr('SitePassword') . '</h3>
+        <form action="" method="post">
+            <input name="visitorPass" type="password" placeholder="' . getconstStr('InputPassword') . '" autofocus style="font-size:16px;padding:8px">
+            <input type="submit" value="' . getconstStr('Login') . '" style="font-size:16px;padding:8px">
+        </form>
+    </div>
+</body>
+</html>', 401);
+}
+
 function adminform($name = '', $pass = '', $storage = '', $path = '') {
     $html = '<html>
     <head>
@@ -1609,7 +1642,7 @@ output:
             } elseif (isSwitchEnv($key)) {
                 $frame .= '
                 <select name="' . $key . '">
-                    <option value=""></option>
+                    <option value="">false</option>
                     <option value="1"' . (getConfig($key) ? ' selected="selected"' : '') . '>true</option>
                 </select>
                 ' . getconstStr('EnvironmentsDescription')[$key];
@@ -1723,7 +1756,7 @@ output:
                 } elseif (isSwitchEnv($key)) {
                     $frame .= '
             <select name="' . $key . '">
-                <option value=""></option>
+                <option value="">false</option>
                 <option value="1"' . (getConfig($key, $disktag) != '' ? ' selected="selected"' : '') . '>true</option>
             </select>
             ' . getconstStr('EnvironmentsDescription')[$key];
