@@ -16,7 +16,7 @@ function apiHandler($path) {
 
     $apiKey = apiAuth();
     if ($apiKey === false || $apiKey === null) {
-        $publicEndpoints = ['list', 'file', 'download', 'info', ''];
+        $publicEndpoints = ['info', ''];
         $base = apiGetAction($route);
         if (!in_array($base, $publicEndpoints)) {
             $result = apiResponse(401, null, 'Unauthorized: api_key required');

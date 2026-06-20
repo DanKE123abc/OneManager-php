@@ -10,20 +10,20 @@ Base URL: `https://your-domain.com/api/`
 
 Set `api_key` in admin panel (`?setup` > Platform Config).
 
-When `api_key` is set, write operations require it via one of:
+When `api_key` is set, **all endpoints except `info`** require it via one of:
 
 - **Header**: `Authorization: Bearer <api_key>`
 - **Query**: `?api_key=<api_key>`
 - **POST param**: `api_key=<api_key>`
 
-Read-only endpoints (`list`, `file`, `download`, `info`) are public and never require auth.
+Only `info` is public. `list`, `file`, `download` all require auth when `api_key` is set.
 
-| Scenario | Read (list/file/download/info) | Write (upload/delete/mkdir/etc) |
-|---|---|---|
-| `api_key` not set | ✅ Open | ✅ Open |
-| `api_key` set, no key provided | ✅ Open | ❌ 401 |
-| `api_key` set, wrong key | ✅ Open | ❌ 401 |
-| `api_key` set, correct key | ✅ Open | ✅ Allowed |
+| Scenario | `info` | `list`, `file`, `download` | `upload`, `delete`, `mkdir`, etc. |
+|---|---|---|---|
+| `api_key` not set | ✅ Open | ✅ Open | ✅ Open |
+| `api_key` set, no key provided | ✅ Open | ❌ 401 | ❌ 401 |
+| `api_key` set, wrong key | ✅ Open | ❌ 401 | ❌ 401 |
+| `api_key` set, correct key | ✅ Open | ✅ Allowed | ✅ Allowed |
 
 ---
 
@@ -80,7 +80,7 @@ Response:
 
 ### `GET /api/list`
 
-List directory contents. No auth required.
+List directory contents. Auth required when `api_key` is set.
 
 | Param | Required | Default | Description |
 |---|---|---|---|
@@ -130,7 +130,7 @@ Response (single file):
 
 ### `GET /api/file`
 
-Get file metadata. No auth required.
+Get file metadata. Auth required when `api_key` is set.
 
 | Param | Required | Description |
 |---|---|---|
@@ -161,7 +161,7 @@ Response:
 
 ### `GET /api/download`
 
-Download a file. No auth required.
+Download a file. Auth required when `api_key` is set.
 
 | Param | Required | Description |
 |---|---|---|
@@ -435,8 +435,8 @@ Response:
 # 1. Check site info
 curl https://example.com/api/info
 
-# 2. List root folder (no auth needed)
-curl "https://example.com/api/list?disktag=dumping"
+# 2. List root folder (auth needed when api_key is set)
+curl "https://example.com/api/list?disktag=dumping&api_key=YOUR_KEY"
 
 # 3. Upload a file (auth needed)
 curl -X POST "https://example.com/api/upload?path=/&disktag=dumping&api_key=YOUR_KEY" \
@@ -462,20 +462,20 @@ Base URL: `https://your-domain.com/api/`
 
 在管理面板（`?setup` > Platform Config）中设置 `api_key`。
 
-设置后，写入类接口需要携带密钥，支持以下方式：
+设置后，**除 `info` 外的所有接口**都需要携带密钥，支持以下方式：
 
 - **请求头**：`Authorization: Bearer <api_key>`
 - **URL参数**：`?api_key=<api_key>`
 - **POST参数**：`api_key=<api_key>`
 
-只读接口（`list`、`file`、`download`、`info`）为公开接口，无需鉴权。
+只有 `info` 为公开接口。`list`、`file`、`download` 在设置 `api_key` 后均需要鉴权。
 
-| 场景 | 读操作 (list/file/download/info) | 写操作 (upload/delete/mkdir等) |
-|---|---|---|
-| 未设置 `api_key` | ✅ 免密 | ✅ 免密 |
-| 已设置，请求中未携带密钥 | ✅ 免密 | ❌ 401 拒绝 |
-| 已设置，密钥错误 | ✅ 免密 | ❌ 401 拒绝 |
-| 已设置，密钥正确 | ✅ 免密 | ✅ 允许 |
+| 场景 | `info` | `list`/`file`/`download` | `upload`/`delete`/`mkdir`等 |
+|---|---|---|---|
+| 未设置 `api_key` | ✅ 免密 | ✅ 免密 | ✅ 免密 |
+| 已设置，请求中未携带密钥 | ✅ 免密 | ❌ 401 拒绝 | ❌ 401 拒绝 |
+| 已设置，密钥错误 | ✅ 免密 | ❌ 401 拒绝 | ❌ 401 拒绝 |
+| 已设置，密钥正确 | ✅ 免密 | ✅ 允许 | ✅ 允许 |
 
 ---
 
@@ -530,7 +530,7 @@ GET /api/info
 
 ### `GET /api/list`
 
-列出目录内容，无需鉴权。
+列出目录内容。设置 `api_key` 后需要鉴权。
 
 | 参数 | 必填 | 默认值 | 说明 |
 |---|---|---|---|
@@ -563,7 +563,7 @@ GET /api/list?disktag=dumping&path=/
 
 ### `GET /api/file`
 
-获取文件元信息，无需鉴权。
+获取文件元信息。设置 `api_key` 后需要鉴权。
 
 | 参数 | 必填 | 说明 |
 |---|---|---|
@@ -578,7 +578,7 @@ GET /api/file?path=/photo.jpg&disktag=dumping
 
 ### `GET /api/download`
 
-下载文件，无需鉴权。
+下载文件。设置 `api_key` 后需要鉴权。
 
 | 参数 | 必填 | 说明 |
 |---|---|---|
@@ -799,8 +799,8 @@ curl -X POST "https://example.com/api/copy?disktag=dumping&api_key=YOUR_KEY" \
 # 查看站点信息
 curl https://example.com/api/info
 
-# 列出根目录（无需鉴权）
-curl "https://example.com/api/list?disktag=dumping"
+# 列出根目录（设置api_key后需鉴权）
+curl "https://example.com/api/list?disktag=dumping&api_key=YOUR_KEY"
 
 # 上传文件（需鉴权）
 curl -X POST "https://example.com/api/upload?path=/&disktag=dumping&api_key=YOUR_KEY" \

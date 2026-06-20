@@ -37,8 +37,8 @@
 
 - Requests with path starting with `/api` are intercepted early in `main()` and routed to `apiHandler()` in `api.php`.
 - All API responses are JSON: `{"code": <http_status>, "data": ..., "message": "..."}`.
-- Auth: set `api_key` in admin panel (PlatformConfig). Pass via `Authorization: Bearer <key>` header or `?api_key=<key>` parameter. If `api_key` is empty/unset, the API is open.
-- Endpoints: `list`, `file`, `download`, `upload`, `upload-session`, `delete`, `mkdir`, `rename`, `move`, `copy`.
+- Auth: set `api_key` in admin panel (PlatformConfig). Pass via `Authorization: Bearer <key>` header or `?api_key=<key>` parameter. If `api_key` is empty/unset, all endpoints are open. When set, all endpoints except `info` require auth.
+- Endpoints: `list`, `file`, `download`, `upload`, `upload-session`, `delete`, `mkdir`, `rename`, `move`, `copy`. All require auth when `api_key` is set.
 - Upload through server is limited to 4 MB. For larger files, use `upload-session` which returns a presigned URL for direct upload to the storage backend.
 - Write operations automatically set `$_SERVER['admin'] = 1` to bypass guest restrictions, CSRF checks, and path traversal protections are skipped. This means the API has full admin access.
 
