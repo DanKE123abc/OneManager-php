@@ -472,6 +472,7 @@
                 <table class="list-table" id="list-table">
                     <tr id="tr0">
                         <th class="file">
+                            <!--AdminStart--><input type="checkbox" id="select_all" onclick="toggleSelectAll(this);">&nbsp;<!--AdminEnd-->
                             <a id="file_a0" fileid="<!--FolderId-->" onclick="sortby('a');"><!--constStr@File--></a>
                             <!--ShowThumbnailsStart-->
                             &nbsp;&nbsp;&nbsp;
@@ -484,11 +485,20 @@
                         <th class="updated_at"><a onclick="sortby('time');"><!--constStr@EditTime--></a></th>
                         <th class="size"><a onclick="sortby('size');"><!--constStr@Size--></a></th>
                     </tr>
+                    <!--AdminStart-->
+                    <tr id="batch_bar" style="display:none;background:rgba(85,85,85,0.1);">
+                        <td colspan="3" style="padding:8px 10px;">
+                            <span id="batch_count"></span>&nbsp;&nbsp;
+                            <button onclick="batchDelete();" style="padding:4px 12px;cursor:pointer;"><!--constStr@Delete--> Selected</button>
+                            <button onclick="batchDownload();" style="padding:4px 12px;cursor:pointer;"><!--constStr@Download--> Selected</button>
+                        </td>
+                    </tr>
+                    <!--AdminEnd-->
                     <!-- Dirs -->
                     <!--FolderListStart-->
                     <tr data-to id="tr<!--filenum-->">
                         <td class="file">
-                            <!--AdminStart-->
+                            <!--AdminStart--><input type="checkbox" class="batch_check" data-type="folder" data-name="<!--FileEncodeReplaceName-->" data-id="<!--FileId-->" data-url="<!--FileEncodeReplaceUrl-->" onclick="updateBatchBar();">&nbsp;<!--AdminEnd-->
                             <li class="operate"><ion-icon name="construct"></ion-icon><a><!--constStr@Operate--></a>
                                 <ul>
                                     <li><a onclick="showdiv(event, 'encrypt', /*--filenum--*/);"><ion-icon name="lock-closed"></ion-icon><!--constStr@Encrypt--></a></li>
@@ -509,7 +519,7 @@
                     <!--FileListStart-->
                     <tr data-to id="tr<!--filenum-->">
                         <td class="file">
-                            <!--AdminStart-->
+                            <!--AdminStart--><input type="checkbox" class="batch_check" data-type="file" data-name="<!--FileEncodeReplaceName-->" data-id="<!--FileId-->" data-url="<!--FileEncodeReplaceUrl-->" onclick="updateBatchBar();">&nbsp;<!--AdminEnd-->
                             <li class="operate"><ion-icon name="construct"></ion-icon><a><!--constStr@Operate--></a>
                                 <ul>
                                     <li><a onclick="showdiv(event, 'rename', /*--filenum--*/);"><ion-icon name="create"></ion-icon><!--constStr@Rename--></a></li>
@@ -1124,6 +1134,86 @@
     }
     /*--IsNotHiddenEnd--*/
     /*--IsFolderEnd--*/
+    /*--AdminStart--*/
+    function toggleSelectAll(el) {
+        var checks = document.getElementsByClassName('batch_check');
+        for (var i = 0; i < checks.length; i++) {
+            checks[i].checked = el.checked;
+        }
+        updateBatchBar();
+    }
+    function updateBatchBar() {
+        var checks = document.getElementsByClassName('batch_check');
+        var count = 0;
+        for (var i = 0; i < checks.length; i++) {
+            if (checks[i].checked) count++;
+        }
+        var bar = document.getElementById('batch_bar');
+        if (bar) {
+            bar.style.display = count > 0 ? '' : 'none';
+            document.getElementById('batch_count').innerText = count + ' selected';
+        }
+        var selectAll = document.getElementById('select_all');
+        if (selectAll) selectAll.checked = (checks.length > 0 && count === checks.length);
+    }
+    function getSelectedItems() {
+        var checks = document.getElementsByClassName('batch_check');
+        var items = [];
+        for (var i = 0; i < checks.length; i++) {
+            if (checks[i].checked) {
+                items.push({
+                    type: checks[i].getAttribute('data-type'),
+                    name: checks[i].getAttribute('data-name'),
+                    id: checks[i].getAttribute('data-id'),
+                    url: checks[i].getAttribute('data-url')
+                });
+            }
+        }
+        return items;
+    }
+    function batchDelete() {
+        var items = getSelectedItems();
+        if (items.length === 0) return;
+        if (!confirm('Delete ' + items.length + ' item(s)?')) return;
+        var adminStorage = localStorage.getItem('admin');
+        var done = 0;
+        var total = items.length;
+        for (var i = 0; i < items.length; i++) {
+            (function(item) {
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', '', true);
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+                xhr.setRequestHeader('x-requested-with', 'XMLHttpRequest');
+                var data = '_admin=' + encodeURIComponent(adminStorage) +
+                    '&delete_name=' + encodeURIComponent(item.name) +
+                    '&delete_fileid=' + encodeURIComponent(item.id);
+                xhr.onload = function() {
+                    done++;
+                    if (done >= total) location.reload();
+                };
+                xhr.onerror = function() {
+                    done++;
+                    if (done >= total) location.reload();
+                };
+                xhr.send(data);
+            })(items[i]);
+        }
+    }
+    function batchDownload() {
+        var items = getSelectedItems();
+        if (items.length === 0) return;
+        for (var i = 0; i < items.length; i++) {
+            if (items[i].type === 'file') {
+                var a = document.createElement('a');
+                a.href = items[i].url;
+                a.download = items[i].name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        }
+    }
+    /*--AdminEnd--*/
     function CopyAllDownloadUrl(str) {
         var tmptextarea = document.createElement('textarea');
         document.body.appendChild(tmptextarea);
